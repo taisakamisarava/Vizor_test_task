@@ -1,0 +1,96 @@
+	
+WITH installs AS(
+	SELECT 
+		*
+	FROM 
+		install
+		),
+
+quest_stats AS (
+	SELECT
+		qs.user_id,
+
+		qs.time AS start_time,
+		qc.time AS finish_time,
+		
+		row_number() 
+			over (partition by qs.user_id order by qs.time) AS quest_num
+	 FROM
+		quest_start qs
+		LEFT JOIN quest_complete qc ON qs.user_id = qc.user_id AND qs.quest = qc.quest	
+		),
+
+session_stats AS (
+	SELECT 
+		user_id,
+		open_time,
+		close_time,
+		duration,
+		MAX(sc.duration) OVER(PARTITION BY sc.user_id) max_duration,
+		MIN(sc.duration) OVER(PARTITION BY sc.user_id) min_duration,
+		ROUND(AVG(sc.duration) OVER(PARTITION BY sc.user_id), 2) avg_duration,
+		MAX(sc.close_time) OVER(PARTITION BY sc.user_id) last_session_closed
+	FROM 
+		session_close sc
+	ORDER BY
+		user_id,
+		open_time
+	),
+
+payment_stats AS (
+	SELECT *,
+		(SELECT 
+			AVG(amount)
+		FROM 
+			payment
+		) AS avg_payment,
+		SUM(amount) 
+			OVER(PARTITION BY user_id) total_payment_PU,
+		AVG(amount) 
+			OVER(PARTITION BY user_id) avg_payment_PPU,
+		row_number() 
+				over (partition by user_id order by time) AS payment_num,
+		(AVG(amount) OVER(PARTITION BY user_id) - amount) AS avg_current_payment_diff
+	FROM 
+		payment	
+
+	),
+
+level_up_stats AS (
+	SELECT
+		user_id,
+		time,
+		level,
+		MAX(level) 
+			OVER (PARTITION BY user_id) AS max_lvl,
+		MAX(time) 
+			OVER (PARTITION BY user_id) AS last_lvl_up_time
+
+	FROM 
+		level_up
+	ORDER BY
+		user_id, time	
+	)	
+
+	
+SELECT
+	DISTINCT i.user_id,
+	i.reg_time,
+	ss.max_duration,
+	ss.min_duration,
+	ss.avg_duration,
+	ss.last_session_closed,
+	ps.total_payment_PU,
+	ps.avg_payment_PPU, 
+	ps.avg_payment,
+	ls.max_lvl,
+	ls.last_lvl_up_time
+	
+	
+FROM 
+	installs i
+	LEFT JOIN session_stats ss USING(user_id)
+	LEFT JOIN payment_stats ps USING(user_id)
+	LEFT JOIN level_up_stats ls USING(user_id)
+;
+
